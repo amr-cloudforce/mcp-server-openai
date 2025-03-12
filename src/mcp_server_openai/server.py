@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 def serve(openai_api_key: str) -> Server:
     server = Server("openai-server")
     connector = LLMConnector(openai_api_key)
-
+    
     @server.list_tools()
     async def handle_list_tools() -> list[types.Tool]:
         return [
@@ -34,15 +34,30 @@ def serve(openai_api_key: str) -> Server:
                     },
                     "required": ["query"]
                 }
+            ),
+            types.Tool(
+                name="ask-openai-vision",
+                description="Ask my vision-capable models about an image",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "Question about the image"},
+                        "image_path": {"type": "string", "description": "Path to the image file"},
+                        "model": {"type": "string", "default": "gpt-4o", "enum": ["gpt-4o", "gpt-4o-mini"]},
+                        "temperature": {"type": "number", "default": 0.7, "minimum": 0, "maximum": 2},
+                        "max_tokens": {"type": "integer", "default": 500, "minimum": 1, "maximum": 4000}
+                    },
+                    "required": ["query", "image_path"]
+                }
             )
         ]
-
+    
     @server.call_tool()
     async def handle_tool_call(name: str, arguments: dict | None) -> list[types.TextContent]:
         try:
             if not arguments:
                 raise ValueError("No arguments provided")
-
+            
             if name == "ask-openai":
                 response = await connector.ask_openai(
                     query=arguments["query"],
@@ -51,12 +66,22 @@ def serve(openai_api_key: str) -> Server:
                     max_tokens=arguments.get("max_tokens", 500)
                 )
                 return [types.TextContent(type="text", text=f"OpenAI Response:\n{response}")]
-
+            
+            elif name == "ask-openai-vision":
+                response = await connector.ask_openai_vision(
+                    query=arguments["query"],
+                    image_path=arguments["image_path"],
+                    model=arguments.get("model", "gpt-4o"),
+                    temperature=arguments.get("temperature", 0.7),
+                    max_tokens=arguments.get("max_tokens", 500)
+                )
+                return [types.TextContent(type="text", text=f"OpenAI Vision Response:\n{response}")]
+            
             raise ValueError(f"Unknown tool: {name}")
         except Exception as e:
             logger.error(f"Tool call failed: {str(e)}")
             return [types.TextContent(type="text", text=f"Error: {str(e)}")]
-
+    
     return server
 
 @click.command()
